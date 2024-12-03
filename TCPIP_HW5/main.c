@@ -19,8 +19,7 @@
 
 
 pid_t pid;
-
-
+char dev[20];
 /**
  * Retrieve the IP address associated with the given network interface name.
  * @param interface_name The name of the network interface (e.g., "eth0").
@@ -83,6 +82,8 @@ void get_netmask_from_interface(const char *interface_name, char *netmask_buffer
 
 int main(int argc, char* argv[])
 {
+	//printf("struct icmphdr: %d\n", sizeof(struct icmphdr));
+	//printf("struct ip: %d\n", sizeof(struct ip));
 	if(argc == 3)
 	{
 	    if(strcmp(argv[1], "-i") != 0)
@@ -109,7 +110,7 @@ int main(int argc, char* argv[])
 	pid = getpid();
 	struct sockaddr_in dst;
 	myicmp *packet = (myicmp*)malloc(PACKET_SIZE);
-	int count = DEFAULT_SEND_COUNT;
+	//int count = DEFAULT_SEND_COUNT;
 	int timeout = DEFAULT_TIMEOUT;
 	
 	/* 
@@ -118,6 +119,7 @@ int main(int argc, char* argv[])
 	// get ip from interface name
 	char target_ip[INET_ADDRSTRLEN];
     const char *interface_name = argv[2]; // input interface name
+    strcpy(dev, argv[2]); // set up dev in pcap.c
     get_ip_from_interface(interface_name, target_ip, sizeof(target_ip));
     printf("-----Initial Network Info-------------------------------\n");
     printf("IP address of %s: %s\n", interface_name, target_ip);
@@ -131,9 +133,7 @@ int main(int argc, char* argv[])
     {
         timeout = atoi(argv[4]);
     }
-	//my_pcap_init( target_ip , timeout);
-
-	
+	my_pcap_init( target_ip , timeout);
 	
 	if((sockfd = socket(AF_INET, SOCK_RAW , IPPROTO_RAW)) < 0)
 	{
@@ -167,8 +167,8 @@ int main(int argc, char* argv[])
     end_ip.s_addr = (start_ip.s_addr & netmask.s_addr) | htonl(254);  // End of the subnet range
 
     // Print start and end IP addresses in human-readable form
-    // Should print: 192.168.1.1 // Should print: 192.168.1.254
-    printf("Search from Start IP: %s to End IP: %s\n", inet_ntoa(start_ip), inet_ntoa(end_ip));  
+    printf("Search from Start IP: %s to End IP: ", inet_ntoa(start_ip)); // Should print: 192.168.1.1
+    printf("%s\n", inet_ntoa(end_ip)); // Should print: 192.168.1.254
     printf("--------------------------------------------------------\n");
     int seq = 1;  // Sequence number starts at 1
 
@@ -182,10 +182,9 @@ int main(int argc, char* argv[])
         dst.sin_family = AF_INET;
         dst.sin_addr = current_ip;
 
-        // update pcap every time
-        my_pcap_init(inet_ntoa(current_ip), timeout);
         // Fill the ICMP packet
         u8 *data = (u8 *)student_id;  // Use student ID as data
+        memset(packet, 0, PACKET_SIZE);
         fill_iphdr(&packet->ip_hdr, target_ip, inet_ntoa(dst.sin_addr));  // Fill IP header
         fill_icmphdr(&packet->icmp_hdr, data, student_id_size, seq);      // Fill ICMP header
 
@@ -198,6 +197,16 @@ int main(int argc, char* argv[])
             perror("sendto");
             continue;
         }
+       /* else {
+            printf("Echo Request sent:\n");
+            printf("\tSource: %s\n", inet_ntoa(packet->ip_hdr.ip_src));
+            printf("\tDestination: %s\n", inet_ntoa(packet->ip_hdr.ip_dst));
+            printf("\tICMP Type: %d\n", packet->icmp_hdr.type);
+            printf("\tICMP Code: %d\n", packet->icmp_hdr.code);
+            printf("\tID: %#x, Sequence: %d\n", ntohs(packet->icmp_hdr.un.echo.id), ntohs(packet->icmp_hdr.un.echo.sequence));
+
+        }*/
+        
         printf("PING %s (data size = %ld, id = %#x, seq = %d, timeout = %d ms)\n",
                inet_ntoa(current_ip), student_id_size, pid, seq, timeout);
 
@@ -215,23 +224,27 @@ int main(int argc, char* argv[])
         if (retval == -1) {
             perror("select");  // Error in select
             continue;
-        } else if (retval == 0) {
+        } 
+        else if (retval == 0) {
             // Timeout occurred
             printf("\tDestination %s is unreachable (timeout)\n", inet_ntoa(current_ip));
-        } else {
+        } 
+        else {
             // Reply received
             int reply = my_pcap_get_reply();  // Capture and analyze the reply
-            if (reply == 0) {
+            if (reply == seq) 
+            {
                 // Record the end time and calculate elapsed time
                 gettimeofday(&end, NULL);
                 double elapsed_time = (end.tv_sec - start.tv_sec) * 1000.0;       // Seconds to milliseconds
                 elapsed_time += (end.tv_usec - start.tv_usec) / 1000.0;           // Microseconds to milliseconds
                 printf("\tReply from : %s , time : %f ms\n", inet_ntoa(current_ip), elapsed_time);
-            } else {
+            } 
+            else 
+            {
                 printf("\tDestination %s is unreachable (no valid ICMP reply)\n", inet_ntoa(current_ip));
             }
         }
-
         seq++;  // Increment the sequence number
     }
 

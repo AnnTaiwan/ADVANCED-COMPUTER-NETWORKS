@@ -11,7 +11,7 @@ SRCS = fill_packet.c  main.c  pcap.c
 OBJS = $(SRCS:.c=.o)
 
 # Executable
-EXES = main
+EXES = ipscanner
 
 # Headers
 HEADER = fill_packet.h pcap.h

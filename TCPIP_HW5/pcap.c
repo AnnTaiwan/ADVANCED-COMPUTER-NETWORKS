@@ -8,7 +8,8 @@
 extern pid_t pid;
 extern u16 icmp_req;
 
-static const char* dev = "ens33";
+extern char dev[20];
+//static const char* dev = "ens33";
 static char* net;
 static char* mask;
 
@@ -63,7 +64,9 @@ void my_pcap_init( const char* dst_ip ,int timeout )
 	/*
 	 *    you should complete your filter string before pcap_compile
 	 */
-	snprintf(filter_string, FILTER_STRING_SIZE, "icmp and src host %s", dst_ip);  
+	//snprintf(filter_string, FILTER_STRING_SIZE, "icmp and dst host %s", dst_ip);
+	//snprintf(filter_string, FILTER_STRING_SIZE, "icmp and src host %s", dst_ip);  
+	snprintf(filter_string, FILTER_STRING_SIZE, "icmp");  
 	if(pcap_compile(p, &fcode, filter_string, 0, maskp) == -1){
 		pcap_perror(p,"pcap_compile");
 		exit(1);
@@ -79,7 +82,6 @@ void my_pcap_init( const char* dst_ip ,int timeout )
 int my_pcap_get_reply( void )
 {
 	const u_char *ptr;
-
 	ptr = pcap_next(p, &hdr);
 	
 	/*
@@ -92,20 +94,62 @@ int my_pcap_get_reply( void )
     }
     else
     {
-    printf("No pac###################kets captured.\n");
+        printf("Packets captured.\n");
     }
 
-    struct ip *ip_hdr = (struct ip *)(ptr + 14); // Skip Ethernet header
-    if (ip_hdr->ip_p != IPPROTO_ICMP) {
+    
+    // analyze Ethernet Header
+    struct ethhdr *eth_hdr = (struct ethhdr *)ptr;
+    printf("Ethernet Header:\n");
+    printf("\tDestination MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+           eth_hdr->h_dest[0], eth_hdr->h_dest[1], eth_hdr->h_dest[2],
+           eth_hdr->h_dest[3], eth_hdr->h_dest[4], eth_hdr->h_dest[5]);
+    printf("\tSource MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+           eth_hdr->h_source[0], eth_hdr->h_source[1], eth_hdr->h_source[2],
+           eth_hdr->h_source[3], eth_hdr->h_source[4], eth_hdr->h_source[5]);
+    printf("\tEtherType: 0x%04x\n", ntohs(eth_hdr->h_proto));
+
+    // check if it is ipv4
+    if (ntohs(eth_hdr->h_proto) != ETH_P_IP) {
+        printf("Not an IPv4 packet.\n");
         return -1;
     }
 
-    struct icmp *icmp_hdr = (struct icmp *)((u_char *)ip_hdr + (ip_hdr->ip_hl * 4));
-    printf("icmp_hdr = %#x\n",icmp_hdr->icmp_id);
-    if (icmp_hdr->icmp_type == ICMP_ECHOREPLY && icmp_hdr->icmp_id == pid) {
-        printf("Received ICMP reply from %s, seq=%u\n",
-               inet_ntoa(ip_hdr->ip_src), icmp_hdr->icmp_seq);
-        return 0;
+    // analyze IP Header
+    struct ip *ip_hdr = (struct ip *)(ptr + 14); // skip Ethernet header
+    printf("IP Header:\n");
+    printf("\tVersion: %d\n", ip_hdr->ip_v);
+    printf("\tHeader Length: %d bytes\n", ip_hdr->ip_hl * 4);
+    printf("\tTotal Length: %d bytes\n", ntohs(ip_hdr->ip_len));
+    printf("\tIdentification: 0x%04x\n", ntohs(ip_hdr->ip_id));
+    printf("\tTTL: %d\n", ip_hdr->ip_ttl);
+    printf("\tProtocol: %d\n", ip_hdr->ip_p);
+    printf("\tHeader Checksum: 0x%04x\n", ntohs(ip_hdr->ip_sum));
+    printf("\tSource IP: %s\n", inet_ntoa(ip_hdr->ip_src));
+    printf("\tDestination IP: %s\n", inet_ntoa(ip_hdr->ip_dst));
+
+    // check if it is ICMP
+    if (ip_hdr->ip_p != IPPROTO_ICMP) {
+        printf("Not an ICMP packet.\n");
+        return -1;
     }
+
+    // analyze ICMP Header
+    struct icmp *icmp_hdr = (struct icmp *)((u_char *)ip_hdr + (ip_hdr->ip_hl * 4));
+    printf("ICMP Header:\n");
+    printf("\tType: %d\n", icmp_hdr->icmp_type);
+    printf("\tCode: %d\n", icmp_hdr->icmp_code);
+    printf("\tChecksum: 0x%04x\n", ntohs(icmp_hdr->icmp_cksum));
+    printf("\tIdentifier: 0x%04x\n", ntohs(icmp_hdr->icmp_id));
+    printf("\tSequence Number: %d\n", ntohs(icmp_hdr->icmp_seq));
+
+    // check if it is specific Echo Reply
+    if (icmp_hdr->icmp_type == ICMP_ECHOREPLY) {
+        printf("Received ICMP Echo Reply from %s, seq=%u\n",
+               inet_ntoa(ip_hdr->ip_src), ntohs(icmp_hdr->icmp_seq));
+        return icmp_hdr->icmp_seq;
+    }
+
+    printf("Packet does not match our ICMP Echo Reply.\n");
     return -1;
 }
