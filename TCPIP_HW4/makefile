@@ -33,3 +33,4 @@ clean:
 
 .PHONY: all clean
 
+# sudo ./prog 3 192.168.40.2
